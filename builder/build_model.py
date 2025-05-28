@@ -17,9 +17,10 @@ if __name__ == "__main__":
     )
     pipe.save_pretrained(args.model_dir, revision="fp16")
     # load photomaker
+    # filename="photomaker-v1.bin",
     photomaker_path =  hf_hub_download(
         repo_id="TencentARC/PhotoMaker",
-        filename="photomaker-v1.bin",
+        filename="photomaker-v2.bin",
         repo_type="model",
         local_dir=os.path.join(args.model_dir, "photomaker")
     )
