@@ -41,16 +41,16 @@ def bytesio_to_base64(bytes_io: io.BytesIO) -> str:
 def upload_result(result: io.BytesIO, key: str) -> str:
     """ Uploads result to S3 bucket if it is available, otherwise returns base64 encoded file. """
     # Upload to S3
-    if os.environ.get('BUCKET_ENDPOINT_URL', False):
-        return upload_in_memory_object(
-            key,
-            result.getvalue(),
-            bucket_creds = {
-                "endpointUrl": os.environ.get('BUCKET_ENDPOINT_URL', None),
-                "accessId": os.environ.get('BUCKET_ACCESS_KEY_ID', None),
-                "accessSecret": os.environ.get('BUCKET_SECRET_ACCESS_KEY', None)
-            }
-        )
+    # if os.environ.get('BUCKET_ENDPOINT_URL', False):
+    #     return upload_in_memory_object(
+    #         key,
+    #         result.getvalue(),
+    #         bucket_creds = {
+    #             "endpointUrl": os.environ.get('BUCKET_ENDPOINT_URL', None),
+    #             "accessId": os.environ.get('BUCKET_ACCESS_KEY_ID', None),
+    #             "accessSecret": os.environ.get('BUCKET_SECRET_ACCESS_KEY', None)
+    #         }
+    #     )
     # Base64 encode
     return bytesio_to_base64(result)
 
@@ -99,21 +99,16 @@ def run(job):
     }
 
     response = requests.post(upload_url, headers=headers, files=files)
-
-    # Extract the download link
-    try:
-        json_data = response.json()
-        if response.status_code == 200 and 'data' in json_data:
-            download_link = json_data['data'].get('downloadPage')
-            if download_link:
-                print('Download link:', download_link)
-            else:
-                print('Download link not found in the response.')
+    json_data = response.json()
+    if response.status_code == 200 and 'data' in json_data:
+        download_link = json_data['data'].get('downloadPage')
+        if download_link:
+            print('Download link:', download_link)
         else:
-            print('Unexpected response format or status code:', response.status_code)
-    except requests.exceptions.JSONDecodeError:
-        print('Error: Response is not valid JSON. Possible server issue.')
-
+            print('Download link not found in the response.')
+    else:
+        print('Unexpected response format or status code:', response.status_code)
+ 
     output_data = upload_result(zip_data, f"{job['id']}.zip")
     job_output = {
         "output_data": output_data
