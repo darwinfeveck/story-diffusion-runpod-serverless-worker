@@ -19,7 +19,7 @@ if __name__ == "__main__":
     # load photomaker
     # filename="photomaker-v1.bin",
     photomaker_path =  hf_hub_download(
-        repo_id="TencentARC/PhotoMaker",
+        repo_id="TencentARC/PhotoMaker-V2",
         filename="photomaker-v2.bin",
         repo_type="model",
         local_dir=os.path.join(args.model_dir, "photomaker")
