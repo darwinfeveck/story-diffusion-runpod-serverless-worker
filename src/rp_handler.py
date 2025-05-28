@@ -106,7 +106,6 @@ def run(job):
         if response.status_code == 200 and 'data' in json_data:
             download_link = json_data['data'].get('downloadPage')
             if download_link:
-                print('File uploaded successfully!')
                 print('Download link:', download_link)
             else:
                 print('Download link not found in the response.')
