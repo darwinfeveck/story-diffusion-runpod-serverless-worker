@@ -66,7 +66,7 @@ class StoryDiffusionXLPipeline(StableDiffusionXLPipeline):
         # Load the main state dict first.
         cache_dir = kwargs.pop("cache_dir", None)
         force_download = kwargs.pop("force_download", False)
-        resume_download = kwargs.pop("resume_download", False)
+        # resume_download = kwargs.pop("resume_download", False)
         proxies = kwargs.pop("proxies", None)
         local_files_only = kwargs.pop("local_files_only", None)
         token = kwargs.pop("token", None)
@@ -83,7 +83,7 @@ class StoryDiffusionXLPipeline(StableDiffusionXLPipeline):
                 weights_name=weight_name,
                 cache_dir=cache_dir,
                 force_download=force_download,
-                resume_download=resume_download,
+                # resume_download=resume_download, #removed to avoid error
                 proxies=proxies,
                 local_files_only=local_files_only,
                 token=token,
