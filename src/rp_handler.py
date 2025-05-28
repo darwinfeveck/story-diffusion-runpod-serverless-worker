@@ -13,6 +13,10 @@ from comic_generator_xl import ComicGeneratorXL
 from rp_schema import INPUT_SCHEMA
 # utils
 from utils import compress_images_to_zip, download_image
+import requests
+
+# Define your API token
+api_token = 'tbZ8RQGaNGo78IkkcpeWmXtDFIMLayTW'  # Replace with your actual API token
 
 
 # Worker params
@@ -83,6 +87,34 @@ def run(job):
 
     # Upload output object
     zip_data = compress_images_to_zip(images)
+    # Set the global upload URL
+    upload_url = 'https://upload.gofile.io/uploadfile'
+
+    # Set headers with the API token
+    headers = {
+        'Authorization': f'Bearer {api_token}'
+    }
+    files = {
+        'file': ('my_files.zip', zip_data, 'application/zip')
+    }
+
+    response = requests.post(upload_url, headers=headers, files=files)
+
+    # Extract the download link
+    try:
+        json_data = response.json()
+        if response.status_code == 200 and 'data' in json_data:
+            download_link = json_data['data'].get('downloadPage')
+            if download_link:
+                print('File uploaded successfully!')
+                print('Download link:', download_link)
+            else:
+                print('Download link not found in the response.')
+        else:
+            print('Unexpected response format or status code:', response.status_code)
+    except requests.exceptions.JSONDecodeError:
+        print('Error: Response is not valid JSON. Possible server issue.')
+
     output_data = upload_result(zip_data, f"{job['id']}.zip")
     job_output = {
         "output_data": output_data
