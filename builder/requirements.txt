@@ -1,7 +1,7 @@
 runpod==1.4.2
-diffusers==0.27.2
-transformers==4.40.1
-accelerate==0.30.0
+diffusers
+transformers
+accelerate
 huggingface-hub
 tqdm
 peft
