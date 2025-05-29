@@ -296,7 +296,7 @@ class ComicGeneratorXL:
             torch_dtype=torch_dtype
         ).to(device)
         # load photomaker for personalization
-        photomaker_path = os.path.join(model_name, "photomaker", "photomaker-v1.bin")
+        photomaker_path = os.path.join(model_name, "photomaker", "photomaker-v2.bin")
         self.pipe.load_photomaker_adapter(
             photomaker_path,
             subfolder = "",
