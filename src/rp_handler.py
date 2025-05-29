@@ -87,6 +87,7 @@ def run(job):
 
     # Upload output object
     zip_data = compress_images_to_zip(images)
+    zip_data.seek(0)
     # Set the global upload URL
     upload_url = 'https://upload.gofile.io/uploadfile'
 
