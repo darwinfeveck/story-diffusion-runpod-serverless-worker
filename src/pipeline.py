@@ -95,10 +95,22 @@ class StoryDiffusionXLPipeline(StableDiffusionXLPipeline):
                 state_dict = {"id_encoder": {}, "lora_weights": {}}
                 with safe_open(model_file, framework="pt", device="cpu") as f:
                     for key in f.keys():
+                        # Map both possible key prefixes into `id_encoder`
                         if key.startswith("id_encoder."):
                             state_dict["id_encoder"][key.replace("id_encoder.", "")] = f.get_tensor(key)
+                        elif key.startswith("qformer_perceiver."):
+                            state_dict["id_encoder"][key.replace("qformer_perceiver.", "")] = f.get_tensor(key)
                         elif key.startswith("lora_weights."):
                             state_dict["lora_weights"][key.replace("lora_weights.", "")] = f.get_tensor(key)
+            # v1
+            # if weight_name.endswith(".safetensors"):
+            #     state_dict = {"id_encoder": {}, "lora_weights": {}}
+            #     with safe_open(model_file, framework="pt", device="cpu") as f:
+            #         for key in f.keys():
+            #             if key.startswith("id_encoder."):
+            #                 state_dict["id_encoder"][key.replace("id_encoder.", "")] = f.get_tensor(key)
+            #             elif key.startswith("lora_weights."):
+            #                 state_dict["lora_weights"][key.replace("lora_weights.", "")] = f.get_tensor(key)
             else:
                 state_dict = torch.load(model_file, map_location="cpu")
         else:
@@ -550,7 +562,7 @@ class StoryDiffusionXLPipeline(StableDiffusionXLPipeline):
                     bs_embed * num_images_per_prompt, -1
                 )
                 # v2 -----------
-                
+
                 negative_prompt_embeds_arr.append(negative_prompt_embeds)
                 negative_prompt_embeds = None
                 negative_pooled_prompt_embeds_arr.append(negative_pooled_prompt_embeds)
