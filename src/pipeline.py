@@ -188,7 +188,7 @@ class StoryDiffusionXLPipeline(StableDiffusionXLPipeline):
                     clean_input_ids = clean_input_ids[:max_len]
                 else:
                     clean_input_ids = clean_input_ids + [tokenizer.pad_token_id] * (
-                        max_len - len(clean_input_ids)
+                        max_len - len(clean_input_ids))
                 
                 # Create mask for class tokens
                 class_tokens_mask = [
