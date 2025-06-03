@@ -111,10 +111,18 @@ class StoryDiffusionXLPipeline(StableDiffusionXLPipeline):
         self.trigger_word = trigger_word
         # load finetuned CLIP image encoder and fuse module here if it has not been registered to the pipeline yet
         print(f"Loading PhotoMaker components [1] id_encoder from [{pretrained_model_name_or_path_or_dict}]...")
-        id_encoder = PhotoMakerIDEncoder()
+        # v1
+        # id_encoder = PhotoMakerIDEncoder()
+        # id_encoder.load_state_dict(state_dict["id_encoder"], strict=True)
+        # id_encoder = id_encoder.to(self.device, dtype=self.unet.dtype)
+        # self.id_encoder = id_encoder
+
+        # v2
+        id_encoder = PhotoMakerIDEncoder()  # v2 has its own internal components
         id_encoder.load_state_dict(state_dict["id_encoder"], strict=True)
-        id_encoder = id_encoder.to(self.device, dtype=self.unet.dtype)
+        id_encoder = id_encoder.to(self.device)
         self.id_encoder = id_encoder
+
         self.id_image_processor = CLIPImageProcessor()
 
         # load lora into models
@@ -501,25 +509,48 @@ class StoryDiffusionXLPipeline(StableDiffusionXLPipeline):
                     negative_pooled_prompt_embeds=negative_pooled_prompt_embeds,
                 )
 
-                # 5. Prepare the input ID images
+                # # 5. Prepare the input ID images - v1
+                # dtype = next(self.id_encoder.parameters()).dtype
+                # if not isinstance(input_id_images[0], torch.Tensor):
+                #     id_pixel_values = self.id_image_processor(input_id_images, return_tensors="pt").pixel_values
+
+                # id_pixel_values = id_pixel_values.unsqueeze(0).to(device=device, dtype=dtype) # TODO: multiple prompts
+
+                # # 6. Get the update text embedding with the stacked ID embedding
+                # prompt_embeds = self.id_encoder(id_pixel_values, prompt_embeds, class_tokens_mask)
+
+                # bs_embed, seq_len, _ = prompt_embeds.shape
+                # # duplicate text embeddings for each generation per prompt, using mps friendly method
+                # prompt_embeds = prompt_embeds.repeat(1, num_images_per_prompt, 1)
+                # prompt_embeds = prompt_embeds.view(bs_embed * num_images_per_prompt, seq_len, -1)
+                # pooled_prompt_embeds = pooled_prompt_embeds.repeat(1, num_images_per_prompt).view(
+                #     bs_embed * num_images_per_prompt, -1
+                # )
+
+                # v2 -----------
+                # 5. Prepare the input ID images 
                 dtype = next(self.id_encoder.parameters()).dtype
+
+                # Use processor to get image tensor if needed
                 if not isinstance(input_id_images[0], torch.Tensor):
                     id_pixel_values = self.id_image_processor(input_id_images, return_tensors="pt").pixel_values
 
-                id_pixel_values = id_pixel_values.unsqueeze(0).to(device=device, dtype=dtype) # TODO: multiple prompts
+                # Add batch dimension and move to device
+                id_pixel_values = id_pixel_values.unsqueeze(0).to(device=device, dtype=dtype)  # [1, N, 3, H, W]
 
-                # 6. Get the update text embedding with the stacked ID embedding
-                prompt_embeds = self.id_encoder(id_pixel_values, prompt_embeds, class_tokens_mask)
+                # 6. Get the updated prompt embeddings with ID info
+                prompt_embeds = self.id_encoder(id_pixel_values=id_pixel_values, prompt_embeds=prompt_embeds)
 
+                # 7. Duplicate embeddings for each image per prompt
                 bs_embed, seq_len, _ = prompt_embeds.shape
-                # duplicate text embeddings for each generation per prompt, using mps friendly method
                 prompt_embeds = prompt_embeds.repeat(1, num_images_per_prompt, 1)
                 prompt_embeds = prompt_embeds.view(bs_embed * num_images_per_prompt, seq_len, -1)
+
                 pooled_prompt_embeds = pooled_prompt_embeds.repeat(1, num_images_per_prompt).view(
                     bs_embed * num_images_per_prompt, -1
                 )
-
-
+                # v2 -----------
+                
                 negative_prompt_embeds_arr.append(negative_prompt_embeds)
                 negative_prompt_embeds = None
                 negative_pooled_prompt_embeds_arr.append(negative_pooled_prompt_embeds)
