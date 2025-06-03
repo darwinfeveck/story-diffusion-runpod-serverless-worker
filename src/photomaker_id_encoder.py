@@ -58,7 +58,7 @@ class PerceiverResampler(nn.Module):
         self.layers = nn.ModuleList([
             nn.Sequential(
                 nn.LayerNorm(latent_dim),
-                nn.MultiheadAttention(latent_dim, num_heads=8, batch_first=True),
+                nn.MultiheadAttention(latent_dim, num_heads=8, batch_first=True),  # Fixed
                 nn.LayerNorm(latent_dim),
                 nn.Linear(latent_dim, latent_dim * 4),
                 nn.GELU(),
@@ -81,7 +81,7 @@ class QFormer(nn.Module):
         self.layers = nn.ModuleList([
             nn.Sequential(
                 nn.LayerNorm(input_dim),
-                nn.MultiheadAttention(input_dim, nhead=8, batch_first=True),
+                nn.MultiheadAttention(input_dim, num_heads=8, batch_first=True),  # Fixed
                 nn.LayerNorm(input_dim),
                 nn.Linear(input_dim, input_dim * 4),
                 nn.GELU(),
