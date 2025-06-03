@@ -47,58 +47,54 @@ class FuseModule(nn.Module):
         stacked_id_embeds = self.layer_norm(stacked_id_embeds)
         return stacked_id_embeds
 
-    def forward(self, prompt_embeds, id_embeds, class_tokens_mask):
+    def forward(self, prompt_embeds, id_embeds, class_tokens_mask=None):
         id_embeds = id_embeds.to(prompt_embeds.dtype)
-        num_inputs = class_tokens_mask.sum().unsqueeze(0)
-        batch_size, max_num_inputs = id_embeds.shape[:2]
-        seq_length = prompt_embeds.shape[1]
-        flat_id_embeds = id_embeds.view(-1, id_embeds.shape[-2], id_embeds.shape[-1])
-        valid_id_mask = (
-            torch.arange(max_num_inputs, device=flat_id_embeds.device)[None, :]
-            < num_inputs[:, None]
-        )
-        valid_id_embeds = flat_id_embeds[valid_id_mask.flatten()]
-        prompt_embeds = prompt_embeds.view(-1, prompt_embeds.shape[-1])
-        class_tokens_mask = class_tokens_mask.view(-1)
-        valid_id_embeds = valid_id_embeds.view(-1, valid_id_embeds.shape[-1])
-        image_token_embeds = prompt_embeds[class_tokens_mask]
-        stacked_id_embeds = self.fuse_fn(image_token_embeds, valid_id_embeds)
-        assert class_tokens_mask.sum() == stacked_id_embeds.shape[0], f"{class_tokens_mask.sum()} != {stacked_id_embeds.shape[0]}"
-        prompt_embeds.masked_scatter_(class_tokens_mask[:, None], stacked_id_embeds.to(prompt_embeds.dtype))
-        updated_prompt_embeds = prompt_embeds.view(batch_size, seq_length, -1)
-        return updated_prompt_embeds
+        return self.fuse_fn(prompt_embeds, id_embeds)
 
 class PerceiverResampler(nn.Module):
     def __init__(self, input_dim, num_layers=4, num_latents=64, latent_dim=512):
         super().__init__()
         self.latents = nn.Parameter(torch.randn(num_latents, latent_dim))
-        self.cross_attn_layers = nn.ModuleList([
-            nn.TransformerEncoderLayer(d_model=latent_dim, nhead=8)
-            for _ in range(num_layers)
+        self.layers = nn.ModuleList([
+            nn.Sequential(
+                nn.LayerNorm(latent_dim),
+                nn.MultiheadAttention(latent_dim, nhead=8, batch_first=True),
+                nn.LayerNorm(latent_dim),
+                nn.Linear(latent_dim, latent_dim * 4),
+                nn.GELU(),
+                nn.Linear(latent_dim * 4, latent_dim),
+            ) for _ in range(num_layers)
         ])
         self.input_proj = nn.Linear(input_dim, latent_dim)
+        self.norm_out = nn.LayerNorm(latent_dim)
 
     def forward(self, x):
-        batch_size = x.size(0)
         x = self.input_proj(x)
-        latents = self.latents.unsqueeze(0).expand(batch_size, -1, -1)
-        for layer in self.cross_attn_layers:
+        latents = self.latents.unsqueeze(0).expand(x.size(0), -1, -1)
+        for layer in self.layers:
             latents = layer(latents + x)
-        return latents
+        return self.norm_out(latents)
 
 class QFormer(nn.Module):
     def __init__(self, input_dim, output_dim):
         super().__init__()
-        self.transformer = nn.TransformerEncoder(
-            nn.TransformerEncoderLayer(d_model=input_dim, nhead=8),
-            num_layers=6
-        )
+        self.layers = nn.ModuleList([
+            nn.Sequential(
+                nn.LayerNorm(input_dim),
+                nn.MultiheadAttention(input_dim, nhead=8, batch_first=True),
+                nn.LayerNorm(input_dim),
+                nn.Linear(input_dim, input_dim * 4),
+                nn.GELU(),
+                nn.Linear(input_dim * 4, input_dim),
+            ) for _ in range(6)
+        ])
         self.output_proj = nn.Linear(input_dim, output_dim)
+        self.norm_out = nn.LayerNorm(output_dim)
 
     def forward(self, x):
-        x = self.transformer(x)
-        x = self.output_proj(x)
-        return x
+        for layer in self.layers:
+            x = layer(x)
+        return self.norm_out(self.output_proj(x))
 
 class PhotoMakerIDEncoder(CLIPVisionModelWithProjection):
     def __init__(self):
@@ -108,7 +104,7 @@ class PhotoMakerIDEncoder(CLIPVisionModelWithProjection):
         self.qformer = QFormer(input_dim=512, output_dim=768)
         self.fuse_module = FuseModule(2048)
 
-    def forward(self, id_pixel_values, prompt_embeds, class_tokens_mask):
+    def forward(self, id_pixel_values, prompt_embeds, class_tokens_mask=None):
         b, num_inputs, c, h, w = id_pixel_values.shape
         id_pixel_values = id_pixel_values.view(b * num_inputs, c, h, w)
         shared_id_embeds = self.vision_model(id_pixel_values)[1]
@@ -117,11 +113,11 @@ class PhotoMakerIDEncoder(CLIPVisionModelWithProjection):
         id_embeds = id_embeds.view(b, num_inputs, 1, -1)
         id_embeds_2 = id_embeds_2.view(b, num_inputs, 1, -1)
         id_embeds = torch.cat((id_embeds, id_embeds_2), dim=-1)
-        # Apply perceiver resampler
+        
+        # V2 processing
         id_embeds = id_embeds.view(b, num_inputs, -1)
         id_embeds = self.perceiver_resampler(id_embeds)
-        # Apply Q-former
         id_embeds = self.qformer(id_embeds)
-        id_embeds = id_embeds.unsqueeze(2)  # Add the singleton dimension back
-        updated_prompt_embeds = self.fuse_module(prompt_embeds, id_embeds, class_tokens_mask)
-        return updated_prompt_embeds
+        id_embeds = id_embeds.unsqueeze(2)
+        
+        return self.fuse_module(prompt_embeds, id_embeds)
