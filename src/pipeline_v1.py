@@ -161,6 +161,9 @@ class StoryDiffusionXLPipeline(StableDiffusionXLPipeline):
         pooled_prompt_embeds: Optional[torch.FloatTensor] = None,
         class_tokens_mask: Optional[torch.LongTensor] = None,
     ):
+        print(f"Original prompts: {prompt}")
+        print(f"Trigger word: '{self.trigger_word}'")
+    
         if isinstance(prompt, str):
             prompt = [prompt]
     
