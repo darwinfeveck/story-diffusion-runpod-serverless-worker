@@ -92,10 +92,7 @@ class StoryDiffusionXLPipeline(StableDiffusionXLPipeline):
                 user_agent=user_agent,
             )
             print("Loading from safetensors:", weight_name)
-            with safe_open(weight_name, framework="pt", device="cpu") as f:
-                all_keys = list(f.keys())
-                print("First 20 keys in the safetensors file:")
-                print(all_keys[:20])
+       
                 
             if weight_name.endswith(".safetensors"):
                 state_dict = {"id_encoder": {}, "lora_weights": {}}
