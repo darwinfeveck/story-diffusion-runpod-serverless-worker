@@ -96,8 +96,8 @@ class StoryDiffusionXLPipeline(StableDiffusionXLPipeline):
                 all_keys = list(f.keys())
                 print("First 20 keys in the safetensors file:")
                 print(all_keys[:20])
-                
-            if weight_name.endswith(".safetensors"):
+
+            if model_file.endswith(".safetensors"):
                 state_dict = {"id_encoder": {}, "lora_weights": {}}
                 with safe_open(model_file, framework="pt", device="cpu") as f:
                     for key in f.keys():
