@@ -161,6 +161,16 @@ class StoryDiffusionXLPipeline(StableDiffusionXLPipeline):
         pooled_prompt_embeds: Optional[torch.FloatTensor] = None,
         class_tokens_mask: Optional[torch.LongTensor] = None,
     ):
+        if isinstance(prompt, str):
+            prompt = [prompt]
+    
+        # Debug: Print raw prompts before processing
+        print(f"Raw prompts received: {prompt}")
+        
+        for p in prompt:
+            if self.trigger_word not in p:
+                raise ValueError(f"Trigger word '{self.trigger_word}' not found in prompt: {p}")
+    
         device = device or self._execution_device
 
         if prompt is not None and isinstance(prompt, str):

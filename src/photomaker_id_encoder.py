@@ -1,7 +1,9 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from transformers.models.clip.modeling_clip import CLIPVisionModelWithProjection
 from transformers.models.clip.configuration_clip import CLIPVisionConfig
+from typing import Optional, Tuple
 
 VISION_CONFIG_DICT = {
     "hidden_size": 1024,
@@ -13,111 +15,87 @@ VISION_CONFIG_DICT = {
 }
 
 class MLP(nn.Module):
-    def __init__(self, in_dim, out_dim, hidden_dim, use_residual=True):
+    """V2 MLP with LayerNorm and residual connections"""
+    def __init__(self, in_dim, hidden_dim=None, out_dim=None, activation=nn.GELU):
         super().__init__()
-        if use_residual:
-            assert in_dim == out_dim
-        self.layernorm = nn.LayerNorm(in_dim)
+        hidden_dim = hidden_dim or in_dim
+        out_dim = out_dim or in_dim
+        self.norm = nn.LayerNorm(in_dim)
         self.fc1 = nn.Linear(in_dim, hidden_dim)
+        self.act = activation()
         self.fc2 = nn.Linear(hidden_dim, out_dim)
-        self.use_residual = use_residual
-        self.act_fn = nn.GELU()
 
     def forward(self, x):
-        residual = x
-        x = self.layernorm(x)
-        x = self.fc1(x)
-        x = self.act_fn(x)
-        x = self.fc2(x)
-        if self.use_residual:
-            x = x + residual
+        return self.fc2(self.act(self.fc1(self.norm(x))))
+
+class V2Attention(nn.Module):
+    """V2-style attention block"""
+    def __init__(self, dim, num_heads=8):
+        super().__init__()
+        self.norm = nn.LayerNorm(dim)
+        self.attn = nn.MultiheadAttention(dim, num_heads, batch_first=True)
+        
+    def forward(self, x):
+        x = self.norm(x)
+        return self.attn(x, x, x)[0]
+
+class V2Block(nn.Module):
+    """Complete V2 transformer block"""
+    def __init__(self, dim, num_heads=8, mlp_ratio=4):
+        super().__init__()
+        self.attn = V2Attention(dim, num_heads)
+        self.mlp = MLP(dim, hidden_dim=dim*mlp_ratio)
+        
+    def forward(self, x):
+        x = x + self.attn(x)
+        x = x + self.mlp(x)
         return x
 
-class FuseModule(nn.Module):
-    def __init__(self, embed_dim):
-        super().__init__()
-        self.mlp1 = MLP(embed_dim * 2, embed_dim, embed_dim, use_residual=False)
-        self.mlp2 = MLP(embed_dim, embed_dim, embed_dim, use_residual=True)
-        self.layer_norm = nn.LayerNorm(embed_dim)
-
-    def fuse_fn(self, prompt_embeds, id_embeds):
-        stacked_id_embeds = torch.cat([prompt_embeds, id_embeds], dim=-1)
-        stacked_id_embeds = self.mlp1(stacked_id_embeds) + prompt_embeds
-        stacked_id_embeds = self.mlp2(stacked_id_embeds)
-        stacked_id_embeds = self.layer_norm(stacked_id_embeds)
-        return stacked_id_embeds
-
-    def forward(self, prompt_embeds, id_embeds, class_tokens_mask=None):
-        id_embeds = id_embeds.to(prompt_embeds.dtype)
-        return self.fuse_fn(prompt_embeds, id_embeds)
-
-class PerceiverResampler(nn.Module):
-    def __init__(self, input_dim, num_layers=4, num_latents=64, latent_dim=512):
+class QFormerPerceiver(nn.Module):
+    """V2 Q-Former with perceiver architecture"""
+    def __init__(self, input_dim=1024, latent_dim=512, num_latents=64, depth=4):
         super().__init__()
         self.latents = nn.Parameter(torch.randn(num_latents, latent_dim))
-        self.layers = nn.ModuleList([
-            nn.Sequential(
-                nn.LayerNorm(latent_dim),
-                nn.MultiheadAttention(latent_dim, num_heads=8, batch_first=True),  # Fixed
-                nn.LayerNorm(latent_dim),
-                nn.Linear(latent_dim, latent_dim * 4),
-                nn.GELU(),
-                nn.Linear(latent_dim * 4, latent_dim),
-            ) for _ in range(num_layers)
+        self.proj_in = nn.Linear(input_dim, latent_dim)
+        self.blocks = nn.ModuleList([
+            V2Block(latent_dim) for _ in range(depth)
         ])
-        self.input_proj = nn.Linear(input_dim, latent_dim)
         self.norm_out = nn.LayerNorm(latent_dim)
-
+        
     def forward(self, x):
-        x = self.input_proj(x)
-        latents = self.latents.unsqueeze(0).expand(x.size(0), -1, -1)
-        for layer in self.layers:
-            latents = layer(latents + x)
+        x = self.proj_in(x)
+        latents = self.latents.expand(x.size(0), -1, -1)
+        
+        for block in self.blocks:
+            latents = block(latents + x)
+            
         return self.norm_out(latents)
 
-class QFormer(nn.Module):
-    def __init__(self, input_dim, output_dim):
-        super().__init__()
-        self.layers = nn.ModuleList([
-            nn.Sequential(
-                nn.LayerNorm(input_dim),
-                nn.MultiheadAttention(input_dim, num_heads=8, batch_first=True),  # Fixed
-                nn.LayerNorm(input_dim),
-                nn.Linear(input_dim, input_dim * 4),
-                nn.GELU(),
-                nn.Linear(input_dim * 4, input_dim),
-            ) for _ in range(6)
-        ])
-        self.output_proj = nn.Linear(input_dim, output_dim)
-        self.norm_out = nn.LayerNorm(output_dim)
-
-    def forward(self, x):
-        for layer in self.layers:
-            x = layer(x)
-        return self.norm_out(self.output_proj(x))
-
 class PhotoMakerIDEncoder(CLIPVisionModelWithProjection):
+    """Complete V2 ID Encoder"""
     def __init__(self):
         super().__init__(CLIPVisionConfig(**VISION_CONFIG_DICT))
         self.visual_projection_2 = nn.Linear(1024, 1280, bias=False)
-        self.perceiver_resampler = PerceiverResampler(input_dim=1024)
-        self.qformer = QFormer(input_dim=512, output_dim=768)
-        self.fuse_module = FuseModule(2048)
-
-    def forward(self, id_pixel_values, prompt_embeds, class_tokens_mask=None):
-        b, num_inputs, c, h, w = id_pixel_values.shape
-        id_pixel_values = id_pixel_values.view(b * num_inputs, c, h, w)
-        shared_id_embeds = self.vision_model(id_pixel_values)[1]
-        id_embeds = self.visual_projection(shared_id_embeds)
-        id_embeds_2 = self.visual_projection_2(shared_id_embeds)
-        id_embeds = id_embeds.view(b, num_inputs, 1, -1)
-        id_embeds_2 = id_embeds_2.view(b, num_inputs, 1, -1)
-        id_embeds = torch.cat((id_embeds, id_embeds_2), dim=-1)
+        self.qformer_perceiver = QFormerPerceiver()
+        self.final_proj = nn.Linear(512, 2048)
         
-        # V2 processing
-        id_embeds = id_embeds.view(b, num_inputs, -1)
-        id_embeds = self.perceiver_resampler(id_embeds)
-        id_embeds = self.qformer(id_embeds)
-        id_embeds = id_embeds.unsqueeze(2)
+    def forward(self, id_pixel_values, prompt_embeds):
+        # Process ID images
+        b, num_inputs = id_pixel_values.shape[:2]
+        id_pixel_values = id_pixel_values.view(b*num_inputs, *id_pixel_values.shape[2:])
         
-        return self.fuse_module(prompt_embeds, id_embeds)
+        # Get CLIP embeddings
+        clip_out = self.vision_model(id_pixel_values)
+        pooled = clip_out[1]
+        
+        # Dual projections
+        embeds1 = self.visual_projection(pooled)
+        embeds2 = self.visual_projection_2(pooled)
+        
+        # Reshape and process
+        x = torch.cat([embeds1, embeds2], dim=-1)
+        x = x.view(b, num_inputs, -1)
+        x = self.qformer_perceiver(x)
+        
+        # Final projection
+        return self.final_proj(x)
