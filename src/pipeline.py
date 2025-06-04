@@ -138,6 +138,7 @@ class StoryDiffusionXLPipeline(StableDiffusionXLPipeline):
 
         # v2
         id_encoder = PhotoMakerIDEncoder()  # v2 has its own internal components
+        print("Loading PhotoMaker ID Encoder...",state_dict["id_encoder"])
         id_encoder.load_state_dict(state_dict["id_encoder"], strict=True)
         id_encoder = id_encoder.to(self.device)
         self.id_encoder = id_encoder
