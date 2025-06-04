@@ -3,9 +3,7 @@ import os
 import torch
 from PIL import Image
 from diffusers import DDIMScheduler, EulerDiscreteScheduler
-from pipeline import StoryDiffusionXLPipeline
-
-# [Previous imports and SpatialAttnProcessor2_0 class remain the same...]
+from pipeline import StoryDiffusionXLPipeline  # Make sure this is your custom pipeline
 
 class ComicGeneratorXL:
     def __init__(
@@ -20,7 +18,7 @@ class ComicGeneratorXL:
     ):
         global _total_count
         _total_count = 0
-        
+
         self.model_name = model_name
         self.id_length = id_length
         self.total_length = total_length
@@ -29,13 +27,13 @@ class ComicGeneratorXL:
         self.trigger_word = trigger_word
         self.has_photomaker = False
 
-        # Load pipeline
+        # Load the main pipeline
         self.pipe = StoryDiffusionXLPipeline.from_pretrained(
             model_name,
             torch_dtype=torch_dtype
         ).to(device)
 
-        # Try loading PhotoMaker adapter if available
+        # Try to load PhotoMaker adapter if available
         photomaker_path = os.path.join(model_name, "photomaker", "photomaker-v2.bin")
         if os.path.exists(photomaker_path):
             try:
@@ -48,19 +46,19 @@ class ComicGeneratorXL:
                     strict=False
                 )
                 self.has_photomaker = True
-                print("PhotoMaker loaded successfully")
+                print("PhotoMaker loaded successfully.")
             except Exception as e:
-                print(f"PhotoMaker loading failed, continuing without it: {str(e)}")
+                print(f"PhotoMaker loading failed: {e}")
                 self.has_photomaker = False
 
-        # Configure pipeline
+        # Enable FreeU (optional enhancement)
         self.pipe.enable_freeu(s1=0.6, s2=0.4, b1=1.1, b2=1.2)
+
+        # Choose scheduler
         if scheduler_type == "euler":
             self.pipe.scheduler = EulerDiscreteScheduler.from_config(self.pipe.scheduler.config)
         else:
             self.pipe.scheduler = DDIMScheduler.from_config(self.pipe.scheduler.config)
-        
-        # [Rest of the initialization remains the same...]
 
     def __call__(
         self,
@@ -75,65 +73,54 @@ class ComicGeneratorXL:
         seed: int = 2047,
         image_ref: Image.Image = None
     ):
+        result_images = []
+
+        # If PhotoMaker is active, enforce single-use trigger word check
+        if self.has_photomaker:
+            for prompt in prompts:
+                if isinstance(prompt, str) and prompt.count(self.trigger_word) > 1:
+                    print(f"[ERROR] Prompt contains multiple trigger words: '{prompt}'")
+                    return []
+
+        input_id_images = [image_ref] if image_ref is not None else None
+
         try:
-            # Initialize default return value
-            result_images = []
-            
-            # Validate prompts for PhotoMaker if enabled
-            if self.has_photomaker:
-                for prompt in prompts:
-                    if isinstance(prompt, str) and prompt.count(self.trigger_word) > 1:
-                        raise ValueError(
-                            f"PhotoMaker doesn't support multiple trigger words ('{self.trigger_word}') "
-                            f"in a single prompt. Problematic prompt: {prompt}"
-                        )
+            # Generate identity (ID) images
+            id_prompts = prompts[:self.id_length]
+            id_images = self.pipe(
+                id_prompts,
+                num_inference_steps=num_inference_steps,
+                guidance_scale=guidance_scale,
+                height=height,
+                width=width,
+                negative_prompt=negative_prompt,
+                generator=torch.Generator(device=self.device).manual_seed(seed),
+                input_id_images=input_id_images
+            ).images
+            result_images.extend(id_images)
 
-            # [Previous setup code for attention masks, etc...]
+        except Exception as e:
+            print(f"[ERROR] Failed to generate ID images: {e}")
+            return []
 
-            # Generate ID images
-            _write = True
-            _cur_step = 0
-            _attn_count = 0
-            input_id_images = [image_ref] if image_ref is not None else None
-
+        # Generate real/action images
+        real_prompts = prompts[self.id_length:]
+        for real_prompt in real_prompts:
             try:
-                id_images = self.pipe(
-                    prompts[:self.id_length],
+                image = self.pipe(
+                    real_prompt,
+                    negative_prompt=negative_prompt,
                     num_inference_steps=num_inference_steps,
                     guidance_scale=guidance_scale,
                     height=height,
                     width=width,
-                    negative_prompt=negative_prompt,
                     generator=torch.Generator(device=self.device).manual_seed(seed),
                     input_id_images=input_id_images
-                ).images
-                result_images.extend(id_images)
+                ).images[0]
+                result_images.append(image)
             except Exception as e:
-                print(f"Error generating ID images: {e}")
-                return None
+                print(f"[ERROR] Failed to generate image for prompt '{real_prompt}': {e}")
+                # Append a blank fallback image
+                result_images.append(Image.new("RGB", (width, height), (0, 0, 0)))
 
-            # Generate real images
-            _write = False
-            for real_prompt in prompts[self.id_length:]:
-                try:
-                    _cur_step = 0
-                    image = self.pipe(
-                        real_prompt,
-                        negative_prompt=negative_prompt,
-                        num_inference_steps=num_inference_steps,
-                        guidance_scale=guidance_scale,
-                        height=height,
-                        width=width,
-                        generator=torch.Generator(device=self.device).manual_seed(seed),
-                        input_id_images=input_id_images
-                    ).images[0]
-                    result_images.append(image)
-                except Exception as e:
-                    print(f"Error generating image for prompt '{real_prompt}': {e}")
-                    result_images.append(Image.new("RGB", (width, height), (0, 0, 0)))  # Return black image as placeholder
-
-            return result_images
-
-        except Exception as e:
-            print(f"Error in ComicGeneratorXL: {e}")
-            return None
+        return result_images
