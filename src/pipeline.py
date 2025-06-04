@@ -18,7 +18,7 @@ from diffusers.utils import (
     logging,
 )
 
-from photomaker_id_encoder import PhotoMakerIDEncoder
+from photomaker_id_encoder import PhotoMakerIDEncoder_CLIPInsightfaceExtendtoken
 from utils import remove_word
 
 PipelineImageInput = Union[
@@ -137,7 +137,7 @@ class StoryDiffusionXLPipeline(StableDiffusionXLPipeline):
         # self.id_encoder = id_encoder
 
         # v2
-        id_encoder = PhotoMakerIDEncoder()  # v2 has its own internal components
+        id_encoder = PhotoMakerIDEncoder_CLIPInsightfaceExtendtoken()  # v2 has its own internal components
         print("Loading PhotoMaker ID Encoder...",state_dict["id_encoder"])
         id_encoder.load_state_dict(state_dict["id_encoder"], strict=True)
         id_encoder = id_encoder.to(self.device)
