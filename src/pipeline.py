@@ -209,6 +209,7 @@ class StoryDiffusionXLPipeline(StableDiffusionXLPipeline):
                         clean_input_ids.append(token_id)
                         clean_index += 1
 
+                print(f"[DEBUG] clean_input_ids (decoded): {[tokenizer.decode([tid]) for tid in clean_input_ids]}")
                 if len(class_token_index) != 1:
                     raise ValueError(
                         f"PhotoMaker currently does not support multiple trigger words in a single prompt.\
