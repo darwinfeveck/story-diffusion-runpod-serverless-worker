@@ -297,11 +297,18 @@ class ComicGeneratorXL:
         ).to(device)
         # load photomaker for personalization
         photomaker_path = os.path.join(model_name, "photomaker", "photomaker-v2.bin")
+        # self.pipe.load_photomaker_adapter(
+        #     photomaker_path,
+        #     subfolder = "",
+        #     weight_name = os.path.basename(photomaker_path),
+        #     trigger_word = self.trigger_word
+        # )
         self.pipe.load_photomaker_adapter(
             photomaker_path,
-            subfolder = "",
-            weight_name = os.path.basename(photomaker_path),
-            trigger_word = self.trigger_word
+            subfolder="",
+            weight_name=os.path.basename(photomaker_path),
+            trigger_word=self.trigger_word,
+            strict=False  # Add this line to ignore key mismatches
         )
         self.pipe.enable_freeu(s1=0.6, s2=0.4, b1=1.1, b2=1.2)
         if scheduler_type == "euler":
