@@ -212,7 +212,7 @@ class StoryDiffusionXLPipeline(StableDiffusionXLPipeline):
                 if len(class_token_index) != 1:
                     raise ValueError(
                         f"PhotoMaker currently does not support multiple trigger words in a single prompt.\
-                            Trigger word: {self.trigger_word}, Prompt: {prompt}."
+                            Trigger word: {self.trigger_word}, Prompt: {prompt}. class_token_index: {class_token_index} {clean_input_ids}"
                     )
                 class_token_index = class_token_index[0]
 
