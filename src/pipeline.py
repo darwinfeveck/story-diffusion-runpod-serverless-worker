@@ -123,6 +123,7 @@ class StoryDiffusionXLPipeline(StableDiffusionXLPipeline):
             state_dict = pretrained_model_name_or_path_or_dict
 
         keys = list(state_dict.keys())
+        print(f"Loaded state dict keys: {keys}")
         if keys != ["id_encoder", "lora_weights"]:
             raise ValueError("Required keys are (`id_encoder` and `lora_weights`) missing from the state dict.")
 
