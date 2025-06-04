@@ -1,8 +1,14 @@
 runpod==1.4.2
 diffusers
+torch
+torchvision
 transformers
 accelerate
-huggingface-hub
-tqdm
+safetensors
+einops
+onnxruntime-gpu
+spaces
+omegaconf
 peft
-torchvision
+huggingface-hub
+insightface==0.7.3
