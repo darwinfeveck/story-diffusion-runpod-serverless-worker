@@ -96,6 +96,7 @@ class StoryDiffusionXLPipeline(StableDiffusionXLPipeline):
        
                 
             if weight_name.endswith(".safetensors"):
+                print("In safetensors")
                 state_dict = {"id_encoder": {}, "lora_weights": {}}
                 with safe_open(model_file, framework="pt", device="cpu") as f:
                     for key in f.keys():
@@ -116,6 +117,7 @@ class StoryDiffusionXLPipeline(StableDiffusionXLPipeline):
             #             elif key.startswith("lora_weights."):
             #                 state_dict["lora_weights"][key.replace("lora_weights.", "")] = f.get_tensor(key)
             else:
+                print("Loading from torch.load")
                 state_dict = torch.load(model_file, map_location="cpu")
         else:
             state_dict = pretrained_model_name_or_path_or_dict
@@ -210,8 +212,10 @@ class StoryDiffusionXLPipeline(StableDiffusionXLPipeline):
                         clean_index += 1
 
                 print(f"[DEBUG] clean_input_ids (decoded): {[tokenizer.decode([tid]) for tid in clean_input_ids]}")
-                tokens = self.pipe.tokenizer.tokenize("Harold img is a curious boy")
-                print("[DEBUG] Tokenizer output:", tokens)
+
+                tokens_test = self.pipe.tokenizer.tokenize("Harold img is a curious boy")
+                print("[DEBUG] Tokenizer output:", tokens_test)
+
                 if len(class_token_index) != 1:
                     raise ValueError(
                         f"PhotoMaker currently does not support multiple trigger words in a single prompt.\
