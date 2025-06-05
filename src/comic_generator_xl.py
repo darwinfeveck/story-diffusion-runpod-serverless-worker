@@ -90,8 +90,8 @@ class ComicGeneratorXL:
                 print(f"Prompt type: {type(id_prompt)}, content: {id_prompt}")
                 print(f"Negative prompt type: {type(negative_prompt)}, content: {negative_prompt}")
                 id_images = self.pipe(
-                    prompt=id_prompt,
-                    negative_prompt=negative_prompt,
+                    prompt=[id_prompt],
+                    negative_prompt=[negative_prompt],
                     num_inference_steps=num_inference_steps,
                     guidance_scale=guidance_scale,
                     height=height,
