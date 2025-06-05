@@ -3,6 +3,7 @@ import torch
 from PIL import Image
 from diffusers import DDIMScheduler, EulerDiscreteScheduler
 from pipeline import StoryDiffusionXLPipeline  # Your custom pipeline
+from transformers import AutoTokenizer
 
 class ComicGeneratorXL:
     def __init__(
@@ -29,6 +30,10 @@ class ComicGeneratorXL:
             torch_dtype=torch_dtype
         ).to(device)
 
+        # Ensure tokenizer is set
+        self.pipe.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.pipe.tokenizer_2 = AutoTokenizer.from_pretrained(model_name)
+
         # Load PhotoMaker V2 adapter
         photomaker_path = os.path.join(model_name, "photomaker", "photomaker-v2.bin")
         if os.path.exists(photomaker_path):
@@ -46,10 +51,7 @@ class ComicGeneratorXL:
             except Exception as e:
                 print(f"PhotoMaker loading failed: {e}")
 
-        # Optional enhancements
         self.pipe.enable_freeu(s1=0.6, s2=0.4, b1=1.1, b2=1.2)
-
-        # Scheduler
         self.pipe.scheduler = EulerDiscreteScheduler.from_config(self.pipe.scheduler.config) if scheduler_type == "euler" else DDIMScheduler.from_config(self.pipe.scheduler.config)
 
     def __call__(
@@ -63,11 +65,11 @@ class ComicGeneratorXL:
         guidance_scale: float = 5.0,
         num_inference_steps: int = 50,
         seed: int = 2047,
-        image_ref: Image.Image = None
+        image_ref: Image.Image = None,
+        style_strength_ratio: float = 0.2
     ):
         result_images = []
 
-        # Enforce single-use trigger word
         if self.has_photomaker:
             for prompt in prompts:
                 if isinstance(prompt, str) and prompt.count(self.trigger_word) > 1:
@@ -76,9 +78,10 @@ class ComicGeneratorXL:
 
         input_id_images = [image_ref] if image_ref is not None else None
         generator = torch.Generator(device=self.device).manual_seed(seed)
+        start_merge_step = int(style_strength_ratio * num_inference_steps)
+        start_merge_step = min(start_merge_step, 30)
 
         try:
-            # Generate identity images
             id_prompts = prompts[:self.id_length]
             id_images = self.pipe(
                 prompt=id_prompts,
@@ -89,14 +92,14 @@ class ComicGeneratorXL:
                 width=width,
                 generator=generator,
                 input_id_images=input_id_images,
-                start_merge_step=0  # full ID fidelity in initial phase
+                start_merge_step=0,
+                num_images_per_prompt=1,
             ).images
             result_images.extend(id_images)
         except Exception as e:
             print(f"[ERROR] Failed to generate ID images: {e}")
             return []
 
-        # Generate real scene/action frames
         for real_prompt in prompts[self.id_length:]:
             try:
                 image = self.pipe(
@@ -108,7 +111,8 @@ class ComicGeneratorXL:
                     width=width,
                     generator=generator,
                     input_id_images=input_id_images,
-                    start_merge_step=30  # style blend start
+                    start_merge_step=start_merge_step,
+                    num_images_per_prompt=1,
                 ).images[0]
                 result_images.append(image)
             except Exception as e:
