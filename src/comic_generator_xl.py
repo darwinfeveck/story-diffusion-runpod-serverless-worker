@@ -88,6 +88,7 @@ class ComicGeneratorXL:
             id_prompts = prompts[:self.id_length]
             for id_prompt in id_prompts:
                 id_images = self.pipe(
+                    prompt=[id_prompt],
                     prompt=id_prompt,
                     negative_prompt=negative_prompt,
                     num_inference_steps=num_inference_steps,
