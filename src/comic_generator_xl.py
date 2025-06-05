@@ -30,9 +30,12 @@ class ComicGeneratorXL:
             torch_dtype=torch_dtype
         ).to(device)
 
-        # Ensure tokenizer is set
-        self.pipe.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.pipe.tokenizer_2 = AutoTokenizer.from_pretrained(model_name)
+        # Safe tokenizer fallback (avoids config.json issue)
+        try:
+            self.pipe.tokenizer = AutoTokenizer.from_pretrained("openai/clip-vit-large-patch14")
+            self.pipe.tokenizer_2 = AutoTokenizer.from_pretrained("openai/clip-vit-large-patch14")
+        except Exception as e:
+            print(f"[WARNING] Failed to load fallback tokenizer: {e}")
 
         # Load PhotoMaker V2 adapter
         photomaker_path = os.path.join(model_name, "photomaker", "photomaker-v2.bin")
