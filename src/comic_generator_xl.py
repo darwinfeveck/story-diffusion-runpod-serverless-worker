@@ -87,7 +87,8 @@ class ComicGeneratorXL:
         try:
             id_prompts = prompts[:self.id_length]
             for id_prompt in id_prompts:
-                print(f"Generating ID image for prompt: {id_prompt}")
+                print(f"Prompt type: {type(id_prompt)}, content: {id_prompt}")
+                print(f"Negative prompt type: {type(negative_prompt)}, content: {negative_prompt}")
                 id_images = self.pipe(
                     prompt=id_prompt,
                     negative_prompt=negative_prompt,
