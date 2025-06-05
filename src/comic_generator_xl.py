@@ -162,5 +162,5 @@ class ComicGeneratorXL:
             except Exception as e:
                 print(f"[ERROR] Failed to generate image for prompt '{real_prompt}': {e}")
                 result_images.append(Image.new("RGB", (width, height), (0, 0, 0)))
-
+        print(f"Generated {len(result_images)} images in total.")
         return result_images
