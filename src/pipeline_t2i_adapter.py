@@ -64,8 +64,8 @@ from diffusers.utils import _get_model_file
 from safetensors import safe_open
 from huggingface_hub.utils import validate_hf_hub_args
 
-from . import (
-    PhotoMakerIDEncoder, # PhotoMaker v1
+from photomaker_id_encoder import (
+    # PhotoMakerIDEncoder, # PhotoMaker v1
     PhotoMakerIDEncoder_CLIPInsightfaceExtendtoken, # PhotoMaker v2
 )
 
@@ -257,12 +257,18 @@ class PhotoMakerStableDiffusionXLAdapterPipeline(StableDiffusionXLAdapterPipelin
         # load finetuned CLIP image encoder and fuse module here if it has not been registered to the pipeline yet
         print(f"Loading PhotoMaker {pm_version} components [1] id_encoder from [{pretrained_model_name_or_path_or_dict}]...")
         self.id_image_processor = CLIPImageProcessor()
-        if pm_version == "v1": # PhotoMaker v1 
-            id_encoder = PhotoMakerIDEncoder()
-        elif pm_version == "v2": # PhotoMaker v2
-            id_encoder = PhotoMakerIDEncoder_CLIPInsightfaceExtendtoken()
-        else:
-            raise NotImplementedError(f"The PhotoMaker version [{pm_version}] does not support")
+       
+        #Removed support for PhotoMaker v1, only v2 is supported now
+        # if pm_version == "v1": # PhotoMaker v1 
+        #     id_encoder = PhotoMakerIDEncoder()
+        # elif pm_version == "v2": # PhotoMaker v2
+        #     id_encoder = PhotoMakerIDEncoder_CLIPInsightfaceExtendtoken()
+        # else:
+        #     raise NotImplementedError(f"The PhotoMaker version [{pm_version}] does not support")
+        
+        pm_version == "v2": # PhotoMaker v2
+        id_encoder = PhotoMakerIDEncoder_CLIPInsightfaceExtendtoken()
+        #-------------
 
         id_encoder.load_state_dict(state_dict["id_encoder"], strict=True)
         id_encoder = id_encoder.to(self.device, dtype=self.unet.dtype)    
