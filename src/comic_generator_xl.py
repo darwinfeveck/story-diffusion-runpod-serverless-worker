@@ -30,13 +30,9 @@ class ComicGeneratorXL:
             torch_dtype=torch_dtype
         ).to(device)
 
-        # Safe tokenizer fallback (avoids config.json issue)
-        try:
-            self.pipe.tokenizer = AutoTokenizer.from_pretrained("openai/clip-vit-large-patch14")
-            self.pipe.tokenizer_2 = AutoTokenizer.from_pretrained("openai/clip-vit-large-patch14")
-        except Exception as e:
-            print(f"[WARNING] Failed to load fallback tokenizer: {e}")
-
+        # Remove the fallback tokenizer loading - let the pipeline use its default tokenizers
+        # The original tokenizers from the model should work correctly
+        
         # Load PhotoMaker V2 adapter
         photomaker_path = os.path.join(model_name, "photomaker", "photomaker-v2.bin")
         if os.path.exists(photomaker_path):
@@ -73,6 +69,30 @@ class ComicGeneratorXL:
     ):
         result_images = []
 
+        # Ensure prompts are strings and properly formatted
+        if not isinstance(prompts, list):
+            prompts = [prompts]
+        
+        # Convert all prompts to strings and validate
+        clean_prompts = []
+        for prompt in prompts:
+            if prompt is None:
+                clean_prompt = ""
+            elif isinstance(prompt, str):
+                clean_prompt = prompt.strip()
+            else:
+                clean_prompt = str(prompt).strip()
+            clean_prompts.append(clean_prompt)
+        
+        prompts = clean_prompts
+
+        # Ensure negative prompt is a string
+        if negative_prompt is None:
+            negative_prompt = ""
+        elif not isinstance(negative_prompt, str):
+            negative_prompt = str(negative_prompt)
+        negative_prompt = negative_prompt.strip()
+
         if self.has_photomaker:
             for prompt in prompts:
                 if isinstance(prompt, str) and prompt.count(self.trigger_word) > 1:
@@ -86,9 +106,16 @@ class ComicGeneratorXL:
 
         try:
             id_prompts = prompts[:self.id_length]
-            for id_prompt in id_prompts:
+            for i, id_prompt in enumerate(id_prompts):
+                print(f"Processing ID prompt {i+1}/{len(id_prompts)}: '{id_prompt}'")
                 print(f"Prompt type: {type(id_prompt)}, content: {id_prompt}")
                 print(f"Negative prompt type: {type(negative_prompt)}, content: {negative_prompt}")
+                
+                # Ensure we have valid string inputs
+                if not isinstance(id_prompt, str) or not id_prompt.strip():
+                    print(f"[WARNING] Empty or invalid prompt at index {i}, skipping...")
+                    continue
+                    
                 id_images = self.pipe(
                     prompt=id_prompt,
                     negative_prompt=negative_prompt,
@@ -104,10 +131,21 @@ class ComicGeneratorXL:
                 result_images.extend(id_images)
         except Exception as e:
             print(f"[ERROR] Failed to generate ID images: {e}")
+            print(f"[DEBUG] ID prompts: {prompts[:self.id_length]}")
+            print(f"[DEBUG] Negative prompt: {negative_prompt}")
             return []
 
-        for real_prompt in prompts[self.id_length:]:
+        # Generate remaining images
+        for i, real_prompt in enumerate(prompts[self.id_length:], self.id_length):
             try:
+                print(f"Processing prompt {i+1}/{len(prompts)}: '{real_prompt}'")
+                
+                # Ensure we have valid string inputs
+                if not isinstance(real_prompt, str) or not real_prompt.strip():
+                    print(f"[WARNING] Empty or invalid prompt at index {i}, creating blank image...")
+                    result_images.append(Image.new("RGB", (width, height), (0, 0, 0)))
+                    continue
+                    
                 image = self.pipe(
                     prompt=real_prompt,
                     negative_prompt=negative_prompt,
