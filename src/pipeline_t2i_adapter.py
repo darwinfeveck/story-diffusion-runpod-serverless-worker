@@ -266,7 +266,7 @@ class PhotoMakerStableDiffusionXLAdapterPipeline(StableDiffusionXLAdapterPipelin
         # else:
         #     raise NotImplementedError(f"The PhotoMaker version [{pm_version}] does not support")
         
-        pm_version == "v2": # PhotoMaker v2
+        
         id_encoder = PhotoMakerIDEncoder_CLIPInsightfaceExtendtoken()
         #-------------
 
