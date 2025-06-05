@@ -155,72 +155,102 @@ class StoryDiffusionXLPipeline(StableDiffusionXLPipeline):
 
         self.tokenizer_2.add_tokens([self.trigger_word], special_tokens=True)
 
- 
     def encode_prompt_with_trigger_word(
         self,
-        prompt: Union[str, List[str]],
-        prompt_2: Optional[Union[str, List[str]]] = None,
+        prompt: str,
+        prompt_2: Optional[str] = None,
         num_id_images: int = 1,
         device: Optional[torch.device] = None,
         prompt_embeds: Optional[torch.FloatTensor] = None,
         pooled_prompt_embeds: Optional[torch.FloatTensor] = None,
         class_tokens_mask: Optional[torch.LongTensor] = None,
     ):
-        device = device or self._execution_device
-        
         print(f"Original prompts: {prompt}")
         print(f"Trigger word: '{self.trigger_word}'")
-        
-        # Handle batch processing
+    
         if isinstance(prompt, str):
-            batch_size = 1
             prompt = [prompt]
-        elif isinstance(prompt, list):
+    
+        # Debug: Print raw prompts before processing
+        print(f"Raw prompts received: {prompt}")
+        
+        for p in prompt:
+            if self.trigger_word not in p:
+                raise ValueError(f"Trigger word '{self.trigger_word}' not found in prompt: {p}")
+    
+        device = device or self._execution_device
+
+        if prompt is not None and isinstance(prompt, str):
+            batch_size = 1
+        elif prompt is not None and isinstance(prompt, list):
             batch_size = len(prompt)
         else:
-            batch_size = prompt_embeds.shape[0] if prompt_embeds is not None else 1
+            batch_size = prompt_embeds.shape[0]
 
-        # Find trigger word token
+        # Find the token id of the trigger word
         image_token_id = self.tokenizer_2.convert_tokens_to_ids(self.trigger_word)
 
+        # Define tokenizers and text encoders
         tokenizers = [self.tokenizer, self.tokenizer_2] if self.tokenizer is not None else [self.tokenizer_2]
-        text_encoders = [self.text_encoder, self.text_encoder_2] if self.text_encoder is not None else [self.text_encoder_2]
+        text_encoders = (
+            [self.text_encoder, self.text_encoder_2] if self.text_encoder is not None else [self.text_encoder_2]
+        )
 
         if prompt_embeds is None:
             prompt_2 = prompt_2 or prompt
             prompt_embeds_list = []
             prompts = [prompt, prompt_2]
-            
             for prompt, tokenizer, text_encoder in zip(prompts, tokenizers, text_encoders):
-                # Batch process all prompts
-                text_inputs = tokenizer(
-                    prompt,
-                    padding="max_length",
-                    max_length=tokenizer.model_max_length,
-                    truncation=True,
-                    return_tensors="pt",
-                    add_special_tokens=True
-                )
-                input_ids = text_inputs.input_ids.to(device)
+                input_ids = tokenizer.encode(prompt) # TODO: batch encode
+                clean_index = 0
+                clean_input_ids = []
+                class_token_index = []
+                # Find out the corresponding class word token based on the newly added trigger word token
+                for i, token_id in enumerate(input_ids):
+                    if token_id == image_token_id:
+                        class_token_index.append(clean_index - 1)
+                    else:
+                        clean_input_ids.append(token_id)
+                        clean_index += 1
 
-                # Find all trigger word positions
-                trigger_positions = (input_ids == image_token_id).nonzero(as_tuple=True)[1]
-                
-                if len(trigger_positions) == 0:
-                    raise ValueError(f"Trigger word '{self.trigger_word}' not found in prompt: {prompt}")
+                print(f"[DEBUG] clean_input_ids (decoded): {[tokenizer.decode([tid]) for tid in clean_input_ids]}")
 
-                # Create mask for class tokens
-                class_tokens_mask = torch.zeros_like(input_ids, dtype=torch.bool)
-                for pos in trigger_positions:
-                    class_token_pos = pos - 1  # Class word is before trigger
-                    class_tokens_mask[:, class_token_pos:class_token_pos+num_id_images] = True
+                tokens_test = self.pipe.tokenizer.tokenize("Harold img is a curious boy")
+                print("[DEBUG] Tokenizer output:", tokens_test)
 
-                # Get text embeddings
+                if len(class_token_index) != 1:
+                    raise ValueError(
+                        f"PhotoMaker currently does not support multiple trigger words in a single prompt.\
+                            Trigger word: {self.trigger_word}, Prompt: {prompt}. class_token_index: {class_token_index} {clean_input_ids}"
+                    )
+                class_token_index = class_token_index[0]
+
+                # Expand the class word token and corresponding mask
+                class_token = clean_input_ids[class_token_index]
+                clean_input_ids = clean_input_ids[:class_token_index] + [class_token] * num_id_images + \
+                    clean_input_ids[class_token_index+1:]
+
+                # Truncation or padding
+                max_len = tokenizer.model_max_length
+                if len(clean_input_ids) > max_len:
+                    clean_input_ids = clean_input_ids[:max_len]
+                else:
+                    clean_input_ids = clean_input_ids + [tokenizer.pad_token_id] * (
+                        max_len - len(clean_input_ids)
+                    )
+
+                class_tokens_mask = [True if class_token_index <= i < class_token_index+num_id_images else False \
+                     for i in range(len(clean_input_ids))]
+
+                clean_input_ids = torch.tensor(clean_input_ids, dtype=torch.long).unsqueeze(0)
+                class_tokens_mask = torch.tensor(class_tokens_mask, dtype=torch.bool).unsqueeze(0)
+
                 prompt_embeds = text_encoder(
-                    input_ids,
+                    clean_input_ids.to(device),
                     output_hidden_states=True,
                 )
-                
+
+                # We are only ALWAYS interested in the pooled output of the final text encoder
                 pooled_prompt_embeds = prompt_embeds[0]
                 prompt_embeds = prompt_embeds.hidden_states[-2]
                 prompt_embeds_list.append(prompt_embeds)
@@ -228,7 +258,7 @@ class StoryDiffusionXLPipeline(StableDiffusionXLPipeline):
             prompt_embeds = torch.concat(prompt_embeds_list, dim=-1)
 
         prompt_embeds = prompt_embeds.to(dtype=self.text_encoder_2.dtype, device=device)
-        class_tokens_mask = class_tokens_mask.to(device=device)
+        class_tokens_mask = class_tokens_mask.to(device=device) # TODO: ignoring two-prompt case
 
         return prompt_embeds, pooled_prompt_embeds, class_tokens_mask
 
