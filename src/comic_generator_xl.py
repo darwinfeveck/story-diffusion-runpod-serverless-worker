@@ -86,19 +86,20 @@ class ComicGeneratorXL:
 
         try:
             id_prompts = prompts[:self.id_length]
-            id_images = self.pipe(
-                prompt=id_prompts,
-                negative_prompt=negative_prompt,
-                num_inference_steps=num_inference_steps,
-                guidance_scale=guidance_scale,
-                height=height,
-                width=width,
-                generator=generator,
-                input_id_images=input_id_images,
-                start_merge_step=0,
-                num_images_per_prompt=1,
-            ).images
-            result_images.extend(id_images)
+            for id_prompt in id_prompts:
+                id_images = self.pipe(
+                    prompt=id_prompt,
+                    negative_prompt=negative_prompt,
+                    num_inference_steps=num_inference_steps,
+                    guidance_scale=guidance_scale,
+                    height=height,
+                    width=width,
+                    generator=generator,
+                    input_id_images=input_id_images,
+                    start_merge_step=0,
+                    num_images_per_prompt=1,
+                ).images
+                result_images.extend(id_images)
         except Exception as e:
             print(f"[ERROR] Failed to generate ID images: {e}")
             return []
