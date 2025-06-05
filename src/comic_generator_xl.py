@@ -1,9 +1,8 @@
-import copy
 import os
 import torch
 from PIL import Image
 from diffusers import DDIMScheduler, EulerDiscreteScheduler
-from pipeline import StoryDiffusionXLPipeline  # Make sure this is your custom pipeline
+from pipeline import StoryDiffusionXLPipeline  # Your custom pipeline
 
 class ComicGeneratorXL:
     def __init__(
@@ -16,9 +15,6 @@ class ComicGeneratorXL:
         scheduler_type: str = "euler",
         trigger_word: str = "img",
     ):
-        global _total_count
-        _total_count = 0
-
         self.model_name = model_name
         self.id_length = id_length
         self.total_length = total_length
@@ -27,38 +23,34 @@ class ComicGeneratorXL:
         self.trigger_word = trigger_word
         self.has_photomaker = False
 
-        # Load the main pipeline
+        # Load pipeline
         self.pipe = StoryDiffusionXLPipeline.from_pretrained(
             model_name,
             torch_dtype=torch_dtype
         ).to(device)
 
-        # Try to load PhotoMaker adapter if available
+        # Load PhotoMaker V2 adapter
         photomaker_path = os.path.join(model_name, "photomaker", "photomaker-v2.bin")
         if os.path.exists(photomaker_path):
             try:
                 print(f"Attempting to load PhotoMaker from: {photomaker_path}")
                 self.pipe.load_photomaker_adapter(
-                    photomaker_path,
+                    pretrained_model_name_or_path_or_dict=os.path.dirname(photomaker_path),
                     subfolder="",
                     weight_name=os.path.basename(photomaker_path),
                     trigger_word=self.trigger_word,
-                    strict=False
+                    strict=False,
                 )
                 self.has_photomaker = True
-                print("PhotoMaker loaded successfully.")
+                print("PhotoMaker V2 loaded successfully.")
             except Exception as e:
                 print(f"PhotoMaker loading failed: {e}")
-                self.has_photomaker = False
 
-        # Enable FreeU (optional enhancement)
+        # Optional enhancements
         self.pipe.enable_freeu(s1=0.6, s2=0.4, b1=1.1, b2=1.2)
 
-        # Choose scheduler
-        if scheduler_type == "euler":
-            self.pipe.scheduler = EulerDiscreteScheduler.from_config(self.pipe.scheduler.config)
-        else:
-            self.pipe.scheduler = DDIMScheduler.from_config(self.pipe.scheduler.config)
+        # Scheduler
+        self.pipe.scheduler = EulerDiscreteScheduler.from_config(self.pipe.scheduler.config) if scheduler_type == "euler" else DDIMScheduler.from_config(self.pipe.scheduler.config)
 
     def __call__(
         self,
@@ -75,7 +67,7 @@ class ComicGeneratorXL:
     ):
         result_images = []
 
-        # If PhotoMaker is active, enforce single-use trigger word check
+        # Enforce single-use trigger word
         if self.has_photomaker:
             for prompt in prompts:
                 if isinstance(prompt, str) and prompt.count(self.trigger_word) > 1:
@@ -83,44 +75,44 @@ class ComicGeneratorXL:
                     return []
 
         input_id_images = [image_ref] if image_ref is not None else None
+        generator = torch.Generator(device=self.device).manual_seed(seed)
 
         try:
-            # Generate identity (ID) images
+            # Generate identity images
             id_prompts = prompts[:self.id_length]
             id_images = self.pipe(
-                id_prompts,
+                prompt=id_prompts,
+                negative_prompt=negative_prompt,
                 num_inference_steps=num_inference_steps,
                 guidance_scale=guidance_scale,
                 height=height,
                 width=width,
-                negative_prompt=negative_prompt,
-                generator=torch.Generator(device=self.device).manual_seed(seed),
-                input_id_images=input_id_images
+                generator=generator,
+                input_id_images=input_id_images,
+                start_merge_step=0  # full ID fidelity in initial phase
             ).images
             result_images.extend(id_images)
-
         except Exception as e:
             print(f"[ERROR] Failed to generate ID images: {e}")
             return []
 
-        # Generate real/action images
-        real_prompts = prompts[self.id_length:]
-        for real_prompt in real_prompts:
+        # Generate real scene/action frames
+        for real_prompt in prompts[self.id_length:]:
             try:
                 image = self.pipe(
-                    real_prompt,
+                    prompt=real_prompt,
                     negative_prompt=negative_prompt,
                     num_inference_steps=num_inference_steps,
                     guidance_scale=guidance_scale,
                     height=height,
                     width=width,
-                    generator=torch.Generator(device=self.device).manual_seed(seed),
-                    input_id_images=input_id_images
+                    generator=generator,
+                    input_id_images=input_id_images,
+                    start_merge_step=30  # style blend start
                 ).images[0]
                 result_images.append(image)
             except Exception as e:
                 print(f"[ERROR] Failed to generate image for prompt '{real_prompt}': {e}")
-                # Append a blank fallback image
                 result_images.append(Image.new("RGB", (width, height), (0, 0, 0)))
 
         return result_images
